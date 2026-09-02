@@ -1,5 +1,5 @@
 {
-  "name": "mice-and-cats",
+  "name": "nyaister",
   "version": "1.0.0",
   "description": "2人対戦・観戦対応『ニャイスター』オンラインゲーム",
   "main": "server.js",
