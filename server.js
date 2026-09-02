@@ -9,6 +9,10 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 const PORT = process.env.PORT || 3000;
 const BOARD_SIZE = 6;
 const P1_TARGET_CORNERS = ['0,0', '0,5'];
