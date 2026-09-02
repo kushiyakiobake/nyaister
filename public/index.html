@@ -25,10 +25,11 @@
     }
     #role-badge {
       background: #444;
-      padding: 4px 12px;
+      padding: 6px 16px;
       border-radius: 12px;
-      font-size: 0.9rem;
+      font-size: 0.95rem;
       margin-bottom: 8px;
+      font-weight: bold;
     }
     #status {
       font-size: 1.2rem;
@@ -143,11 +144,11 @@
 
   <h1>ニャイスター</h1>
   <div id="role-badge">接続中...</div>
-  <div id="status">対戦相手を待っています...</div>
+  <div id="status">サーバーに接続しています...</div>
 
   <!-- 初期配置パネル -->
   <div id="setup-panel" style="display: none;">
-    <div>手前2行の配置（🧀捕る猫: 4匹 / ❌捕らない猫: 4匹 を割り当ててください）</div>
+    <div>手前2行の配置（🧀捕る猫: 4匹 / ❌捕らない猫: 4匹）</div>
     <div class="setup-grid" id="setup-grid"></div>
     <button id="btn-submit-setup" onclick="submitSetup()">配置決定</button>
   </div>
@@ -171,22 +172,15 @@
     const ALL_CORNERS = [...P1_TARGET_CORNERS, ...P2_TARGET_CORNERS];
 
     let gameState = null;
-    let myRole = 'spectator';
     let selectedCell = null;
-    // 初期設定状態 (デフォルトで前4つ捕る猫、後4つ捕らない猫)
     let mySetup = [true, true, true, true, false, false, false, false];
 
-    // ルーム接続
-    socket.emit('join_room', roomId);
-
-    socket.on('role_assigned', (data) => {
-      myRole = data.role;
-      const badge = document.getElementById('role-badge');
-      if (myRole === 'p1') badge.innerText = 'あなたの役割: 白猫 (P1)';
-      else if (myRole === 'p2') badge.innerText = 'あなたの役割: 黒猫 (P2)';
-      else badge.innerText = 'あなたの役割: 観戦者 👁️';
+    // 接続時にルーム参加を通知
+    socket.on('connect', () => {
+      socket.emit('join_room', roomId);
     });
 
+    // サーバーから状態を受信
     socket.on('game_state', (state) => {
       gameState = state;
       render();
@@ -195,19 +189,27 @@
     function render() {
       if (!gameState) return;
 
-      // 1. スコア更新
+      const myRole = gameState.myRole; // サーバーから判定済みの役割を取得
+
+      // 1. バッジ（役割表示）の更新
+      const badge = document.getElementById('role-badge');
+      if (myRole === 'p1') badge.innerText = 'あなたの役割: 白猫 (P1)';
+      else if (myRole === 'p2') badge.innerText = 'あなたの役割: 黒猫 (P2)';
+      else badge.innerText = 'あなたの役割: 観戦者 👁️';
+
+      // 2. スコア更新
       document.getElementById('p1-score').innerText = 
         `捕る🐱: ${gameState.exiled.p1.catcher}/4 | 捕らない❌: ${gameState.exiled.p1.nonCatcher}/4`;
       document.getElementById('p2-score').innerText = 
         `捕る🐱: ${gameState.exiled.p2.catcher}/4 | 捕らない❌: ${gameState.exiled.p2.nonCatcher}/4`;
 
-      // 2. ステータス・パネル制御
+      // 3. ステータス・パネル制御
       const statusEl = document.getElementById('status');
       const setupPanel = document.getElementById('setup-panel');
 
       if (gameState.phase === 'setup') {
         if (myRole === 'spectator') {
-          statusEl.innerText = 'プレイヤーが配置を行っています...';
+          statusEl.innerText = '対戦プレイヤーの配置を待っています...';
           setupPanel.style.display = 'none';
         } else {
           const isReady = (myRole === 'p1' && gameState.p1Ready) || (myRole === 'p2' && gameState.p2Ready);
@@ -230,7 +232,7 @@
         statusEl.innerText = `🎉 勝者: ${gameState.winner === 'p1' ? '白猫(P1)' : '黒猫(P2)'}！ (${gameState.winReason})`;
       }
 
-      // 3. 盤面描画
+      // 4. 盤面描画
       const boardEl = document.getElementById('board');
       boardEl.innerHTML = '';
 
@@ -260,7 +262,6 @@
             piece.className = `piece ${cellData.owner}`;
             piece.innerText = cellData.owner === 'p1' ? '🐱' : '🐈';
 
-            // 正体(isCatcher)が開示されている場合のみマークを表示
             if (cellData.isCatcher !== null) {
               const marker = document.createElement('span');
               marker.className = 'piece-marker';
@@ -277,7 +278,6 @@
       }
     }
 
-    // 初期配置グリッドの描画と切替
     function renderSetupGrid() {
       const grid = document.getElementById('setup-grid');
       grid.innerHTML = '';
@@ -288,7 +288,6 @@
         cell.addEventListener('click', () => {
           mySetup[idx] = !mySetup[idx];
           renderSetupGrid();
-          validateSetup();
         });
         grid.appendChild(cell);
       });
@@ -308,18 +307,16 @@
 
     function handleCellClick(r, c) {
       if (!gameState || gameState.phase !== 'playing') return;
-      if (gameState.turn !== myRole) return; // 自分のターンでなければ無視
+      if (gameState.turn !== gameState.myRole) return;
 
       const cellData = gameState.board[r][c];
 
-      // 自分の駒をクリック -> 選択
-      if (cellData && cellData.owner === myRole) {
+      if (cellData && cellData.owner === gameState.myRole) {
         selectedCell = { r, c };
         render();
         return;
       }
 
-      // 移動先をクリック
       if (selectedCell) {
         if (isValidMove(selectedCell.r, selectedCell.c, r, c)) {
           socket.emit('move_piece', { from: selectedCell, to: { r, c } });
@@ -333,7 +330,7 @@
       const dc = Math.abs(fromC - toC);
       if ((dr === 1 && dc === 0) || (dr === 0 && dc === 1)) {
         const target = gameState.board[toR][toC];
-        if (target && target.owner === myRole) return false;
+        if (target && target.owner === gameState.myRole) return false;
         return true;
       }
       return false;
