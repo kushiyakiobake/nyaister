@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ニャイスター - オンライン対戦</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg-color: #1e1e24;
+      --board-bg: #2b2b36;
+      --cell-bg: #3f3f4e;
+      --text-color: #f1f1f1;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    #role-badge {
+      background: #444;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+    #status {
+      font-size: 1.2rem;
+      margin-bottom: 12px;
+      font-weight: bold;
+      color: #ffcc00;
+    }
+    #score-board {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 15px;
+      background: #2b2b36;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    #setup-panel {
+      background: #2b2b36;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .setup-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 50px);
+      gap: 5px;
+    }
+    .setup-cell {
+      width: 50px;
+      height: 50px;
+      background: #3f3f4e;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.2rem;
+      border: 2px solid transparent;
+    }
+    .setup-cell.active { border-color: #ffcc00; }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(6, 60px);
+      grid-template-rows: repeat(6, 60px);
+      gap: 4px;
+      background-color: var(--board-bg);
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .cell {
+      width: 60px;
+      height: 60px;
+      background-color: var(--cell-bg);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+    .cell.mouse-corner { background-color: #5c4326; }
+    .cell.mouse-corner::after {
+      content: '🐭';
+      position: absolute;
+      font-size: 0.9rem;
+      opacity: 0.4;
+      bottom: 2px;
+      right: 2px;
+    }
+    .cell.target-p1 { border: 2px dashed #e0e0e0; }
+    .cell.target-p2 { border: 2px dashed #666666; }
+    .cell.selected { outline: 3px solid #ffcc00; z-index: 10; }
+    .cell.valid-move { background-color: #2a5a3b; }
+    .piece {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      position: relative;
+    }
+    .piece.p1 { background-color: #e0e0e0; color: #111; }
+    .piece.p2 { background-color: #222222; color: #fff; border: 1px solid #555; }
+    .piece-marker {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      font-size: 0.8rem;
+    }
+    button {
+      background: #2a5a3b;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:disabled { background: #555; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+  <h1>ニャイスター</h1>
+  <div id="role-badge">接続中...</div>
+  <div id="status">対戦相手を待っています...</div>
+
+  <!-- 初期配置パネル -->
+  <div id="setup-panel" style="display: none;">
+    <div>手前2行の配置（🧀捕る猫: 4匹 / ❌捕らない猫: 4匹 を割り当ててください）</div>
+    <div class="setup-grid" id="setup-grid"></div>
+    <button id="btn-submit-setup" onclick="submitSetup()">配置決定</button>
+  </div>
+
+  <!-- スコア表示 -->
+  <div id="score-board">
+    <div>白猫(P1)追出: <span id="p1-score">捕る🐱: 0/4 | 捕らない❌: 0/4</span></div>
+    <div style="border-left: 1px solid #555; margin: 0 5px;"></div>
+    <div>黒猫(P2)追出: <span id="p2-score">捕る🐱: 0/4 | 捕らない❌: 0/4</span></div>
+  </div>
+
+  <div id="board"></div>
+
+  <script>
+    const socket = io();
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomId = urlParams.get('room') || 'default';
+
+    const P1_TARGET_CORNERS = ['0,0', '0,5'];
+    const P2_TARGET_CORNERS = ['5,0', '5,5'];
+    const ALL_CORNERS = [...P1_TARGET_CORNERS, ...P2_TARGET_CORNERS];
+
+    let gameState = null;
+    let myRole = 'spectator';
+    let selectedCell = null;
+    // 初期設定状態 (デフォルトで前4つ捕る猫、後4つ捕らない猫)
+    let mySetup = [true, true, true, true, false, false, false, false];
+
+    // ルーム接続
+    socket.emit('join_room', roomId);
+
+    socket.on('role_assigned', (data) => {
+      myRole = data.role;
+      const badge = document.getElementById('role-badge');
+      if (myRole === 'p1') badge.innerText = 'あなたの役割: 白猫 (P1)';
+      else if (myRole === 'p2') badge.innerText = 'あなたの役割: 黒猫 (P2)';
+      else badge.innerText = 'あなたの役割: 観戦者 👁️';
+    });
+
+    socket.on('game_state', (state) => {
+      gameState = state;
+      render();
+    });
+
+    function render() {
+      if (!gameState) return;
+
+      // 1. スコア更新
+      document.getElementById('p1-score').innerText = 
+        `捕る🐱: ${gameState.exiled.p1.catcher}/4 | 捕らない❌: ${gameState.exiled.p1.nonCatcher}/4`;
+      document.getElementById('p2-score').innerText = 
+        `捕る🐱: ${gameState.exiled.p2.catcher}/4 | 捕らない❌: ${gameState.exiled.p2.nonCatcher}/4`;
+
+      // 2. ステータス・パネル制御
+      const statusEl = document.getElementById('status');
+      const setupPanel = document.getElementById('setup-panel');
+
+      if (gameState.phase === 'setup') {
+        if (myRole === 'spectator') {
+          statusEl.innerText = 'プレイヤーが配置を行っています...';
+          setupPanel.style.display = 'none';
+        } else {
+          const isReady = (myRole === 'p1' && gameState.p1Ready) || (myRole === 'p2' && gameState.p2Ready);
+          if (isReady) {
+            statusEl.innerText = '相手の配置完了を待っています...';
+            setupPanel.style.display = 'none';
+          } else {
+            statusEl.innerText = '初期配置を決めてください';
+            setupPanel.style.display = 'flex';
+            renderSetupGrid();
+          }
+        }
+      } else if (gameState.phase === 'playing') {
+        setupPanel.style.display = 'none';
+        const isMyTurn = gameState.turn === myRole;
+        const turnText = gameState.turn === 'p1' ? '白猫(P1)' : '黒猫(P2)';
+        statusEl.innerText = isMyTurn ? `【あなたの番です】(${turnText})` : `${turnText} の思考中...`;
+      } else if (gameState.phase === 'ended') {
+        setupPanel.style.display = 'none';
+        statusEl.innerText = `🎉 勝者: ${gameState.winner === 'p1' ? '白猫(P1)' : '黒猫(P2)'}！ (${gameState.winReason})`;
+      }
+
+      // 3. 盤面描画
+      const boardEl = document.getElementById('board');
+      boardEl.innerHTML = '';
+
+      for (let r = 0; r < 6; r++) {
+        for (let c = 0; c < 6; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const key = `${r},${c}`;
+
+          if (ALL_CORNERS.includes(key)) {
+            cell.classList.add('mouse-corner');
+            if (P1_TARGET_CORNERS.includes(key)) cell.classList.add('target-p1');
+            if (P2_TARGET_CORNERS.includes(key)) cell.classList.add('target-p2');
+          }
+
+          if (selectedCell && selectedCell.r === r && selectedCell.c === c) {
+            cell.classList.add('selected');
+          }
+
+          if (selectedCell && isValidMove(selectedCell.r, selectedCell.c, r, c)) {
+            cell.classList.add('valid-move');
+          }
+
+          const cellData = gameState.board[r][c];
+          if (cellData) {
+            const piece = document.createElement('div');
+            piece.className = `piece ${cellData.owner}`;
+            piece.innerText = cellData.owner === 'p1' ? '🐱' : '🐈';
+
+            // 正体(isCatcher)が開示されている場合のみマークを表示
+            if (cellData.isCatcher !== null) {
+              const marker = document.createElement('span');
+              marker.className = 'piece-marker';
+              marker.innerText = cellData.isCatcher ? '🧀' : '❌';
+              piece.appendChild(marker);
+            }
+
+            cell.appendChild(piece);
+          }
+
+          cell.addEventListener('click', () => handleCellClick(r, c));
+          boardEl.appendChild(cell);
+        }
+      }
+    }
+
+    // 初期配置グリッドの描画と切替
+    function renderSetupGrid() {
+      const grid = document.getElementById('setup-grid');
+      grid.innerHTML = '';
+      mySetup.forEach((isCatcher, idx) => {
+        const cell = document.createElement('div');
+        cell.className = `setup-cell ${isCatcher ? 'active' : ''}`;
+        cell.innerText = isCatcher ? '🧀' : '❌';
+        cell.addEventListener('click', () => {
+          mySetup[idx] = !mySetup[idx];
+          renderSetupGrid();
+          validateSetup();
+        });
+        grid.appendChild(cell);
+      });
+      validateSetup();
+    }
+
+    function validateSetup() {
+      const catcherCount = mySetup.filter(v => v === true).length;
+      const btn = document.getElementById('btn-submit-setup');
+      btn.disabled = catcherCount !== 4;
+      btn.innerText = catcherCount === 4 ? '配置決定' : `🧀を4匹にしてください (${catcherCount}/4)`;
+    }
+
+    function submitSetup() {
+      socket.emit('submit_setup', mySetup);
+    }
+
+    function handleCellClick(r, c) {
+      if (!gameState || gameState.phase !== 'playing') return;
+      if (gameState.turn !== myRole) return; // 自分のターンでなければ無視
+
+      const cellData = gameState.board[r][c];
+
+      // 自分の駒をクリック -> 選択
+      if (cellData && cellData.owner === myRole) {
+        selectedCell = { r, c };
+        render();
+        return;
+      }
+
+      // 移動先をクリック
+      if (selectedCell) {
+        if (isValidMove(selectedCell.r, selectedCell.c, r, c)) {
+          socket.emit('move_piece', { from: selectedCell, to: { r, c } });
+          selectedCell = null;
+        }
+      }
+    }
+
+    function isValidMove(fromR, fromC, toR, toC) {
+      const dr = Math.abs(fromR - toR);
+      const dc = Math.abs(fromC - toC);
+      if ((dr === 1 && dc === 0) || (dr === 0 && dc === 1)) {
+        const target = gameState.board[toR][toC];
+        if (target && target.owner === myRole) return false;
+        return true;
+      }
+      return false;
+    }
+  </script>
+</body>
+</html>
