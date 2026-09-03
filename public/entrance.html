@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ニャイスター - エントランス</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #1e1e24;
+      color: #f1f1f1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: #2b2b36;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      width: 320px;
+      text-align: center;
+    }
+    h1 { font-size: 1.8rem; margin-bottom: 20px; }
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: #2a5a3b;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      margin-bottom: 15px;
+      box-sizing: border-box;
+    }
+    .btn:hover { background: #346e48; }
+    .divider {
+      margin: 15px 0;
+      color: #888;
+      font-size: 0.85rem;
+      position: relative;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #1e1e24;
+      color: white;
+      font-size: 1rem;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>🐱 ニャイスター 🐭</h1>
+
+    <!-- 1. 自動発行で部屋を作る -->
+    <button class="btn" onclick="createRandomRoom()">新しい対戦部屋を作る</button>
+
+    <div class="divider">─ または ─</div>
+
+    <!-- 2. 合言葉（部屋名）を指定して入室 -->
+    <input type="text" id="room-input" placeholder="部屋の合言葉（例: cat123）" />
+    <button class="btn" style="background: #4a4a5a;" onclick="joinCustomRoom()">合言葉で入室</button>
+  </div>
+
+  <script>
+    // ランダムな6桁の英数字（部屋コード）を生成して遷移
+    function createRandomRoom() {
+      const randomRoom = Math.random().toString(36).substring(2, 8);
+      window.location.href = `/game.html?room=${randomRoom}`;
+    }
+
+    // 入力された合言葉で遷移
+    function joinCustomRoom() {
+      const roomInput = document.getElementById('room-input').value.trim();
+      if (!roomInput) {
+        alert('合言葉を入力してください');
+        return;
+      }
+      // 英数字・ハイフン等のみ許可（エンコード処理）
+      const safeRoom = encodeURIComponent(roomInput);
+      window.location.href = `/game.html?room=${safeRoom}`;
+    }
+  </script>
+</body>
+</html>
