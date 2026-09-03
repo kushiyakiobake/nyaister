@@ -9,6 +9,11 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ルート（/）にアクセスしたときは entrance.html を開く
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'entrance.html'));
+});
+
 const PORT = process.env.PORT || 3000;
 const P1_TARGET_CORNERS = ['0,0', '0,5'];
 const P2_TARGET_CORNERS = ['5,0', '5,5'];
