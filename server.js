@@ -176,6 +176,7 @@ io.on('connection', (socket) => {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
   });
+}); // ← ★ここに閉じるカッコが不足していました
 
 function getRole(state, socketId) {
   if (state.players.p1.id === socketId) return 'p1';
