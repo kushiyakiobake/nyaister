@@ -156,6 +156,28 @@ io.on('connection', (socket) => {
   });
 });
 
+  socket.on('send_chat', (messageText) => {
+    if (!currentRoom || !rooms[currentRoom]) return;
+    const state = rooms[currentRoom];
+    const role = getRole(state, socket.id);
+
+    // 送信者の表示名を設定
+    let senderName = '観戦者';
+    if (role === 'p1') senderName = '白猫(P1)';
+    if (role === 'p2') senderName = '黒猫(P2)';
+
+    const cleanText = String(messageText).trim().substring(0, 100); // 100文字制限
+    if (!cleanText) return;
+
+    // 部屋全員にチャットメッセージを送信
+    io.to(currentRoom).emit('receive_chat', {
+      sender: senderName,
+      role: role,
+      text: cleanText,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+  });
+
 function getRole(state, socketId) {
   if (state.players.p1.id === socketId) return 'p1';
   if (state.players.p2.id === socketId) return 'p2';
