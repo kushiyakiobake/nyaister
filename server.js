@@ -154,7 +154,6 @@ io.on('connection', (socket) => {
     }
     // ※対戦中(playing)の場合は切断されても盤面を維持し、再接続を待つ
   });
-});
 
   socket.on('send_chat', (messageText) => {
     if (!currentRoom || !rooms[currentRoom]) return;
